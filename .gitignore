@@ -1,0 +1,15 @@
+# Local state / runtime
+*.log
+*.out
+*.err
+*.ns
+prosper-heat-digest-latest.txt
+prosper-heat-winner-announcement.txt
+prosper-heat-lead-pool.json
+.DS_Store
+
+# Secrets (none in the repo by design, but just in case)
+*.env
+prosper.env
+*.token
+*.secret

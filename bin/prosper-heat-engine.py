@@ -25,6 +25,13 @@ REP_NAMES = {
 }
 
 
+def normalize_phone(value):
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if len(digits) == 10:
+        digits = "1" + digits
+    return f"+{digits}" if digits else ""
+
+
 def log(msg):
     with open(LOG, "a") as f:
         f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] {msg}\n")
@@ -62,6 +69,11 @@ def extract_clean_text(raw):
     if m:
         return m.group(1).strip()
     return raw.strip()
+
+
+def is_imessage_reaction(text):
+    """Ignore tapback/reaction artifacts like: Loved "message body"."""
+    return bool(re.match(r"^\s*(Loved|Liked|Disliked|Emphasized|Laughed at|Questioned)\s+[\"“]", text or "", re.I))
 
 
 def strict_classify(text):
@@ -209,6 +221,9 @@ def process_inbound(phone, text):
     clean = extract_clean_text(text)
     if not clean or len(clean) < 1:
         return
+    if is_imessage_reaction(clean):
+        log(f"skip iMessage reaction artifact from {phone}: {clean[:140]!r}")
+        return
 
     rep_key = f"prosper.lead.rep.{phone}"
     rep_name = REP_NAMES.get(phone, "Rep")
@@ -272,14 +287,35 @@ def process_inbound(phone, text):
                 rp("HSET", f"prosper.lead.active.{current_lead_id}", "texted", "1")
             actions.append("TEXT +1")
         elif v == "SET":
+            if not current_lead_id:
+                send_msg(phone, "SET not counted - no active lead is open for you. Reply NEXT to pull a lead first.")
+                log(f"SET REJECTED for {phone} - no active lead: {clean!r}")
+                continue
+            lead_key = f"prosper.lead.active.{current_lead_id}"
+            lead_status = rp("HGET", lead_key, "status")
+            lead_rep = normalize_phone(rp("HGET", lead_key, "rep_phone"))
+            if lead_status != "active" or lead_rep != normalize_phone(phone):
+                stale_lead_id = current_lead_id
+                rp("HSET", rep_key, "current_lead_id", "")
+                current_lead_id = ""
+                send_msg(phone, "SET not counted - that lead is no longer active for you. Reply NEXT for a fresh one.")
+                log(
+                    f"SET REJECTED for {phone} - stale lead {stale_lead_id} "
+                    f"status={lead_status!r} rep={lead_rep!r}: {clean!r}"
+                )
+                continue
+            rp("HSET", lead_key, "set", "1", "status", "closed_set", "closed_at", str(int(time.time())))
+            if rp("HGET", lead_key, "status") != "closed_set":
+                send_msg(phone, "SET not counted - I could not verify the lead status update. Send it again or ping Craig.")
+                log(f"SET REJECTED for {phone} - closed_set verify failed for {current_lead_id}: {clean!r}")
+                continue
             lw = int(rp("HINCRBY", rep_key, "leads_worked_today", "1"))
             set_pts = 5 * lw
             rp("HINCRBY", rep_key, "sets_today", "1")
             rp("HINCRBY", rep_key, "points_today", str(set_pts))
             point_delta += set_pts
-            if current_lead_id:
-                rp("HSET", f"prosper.lead.active.{current_lead_id}", "status", "closed_set", "closed_at", str(int(time.time())))
             rp("HSET", rep_key, "current_lead_id", "")
+            current_lead_id = ""
             actions.append(f"SET +{set_pts} (×{lw})")
             released_or_set = True
             want_next = True
@@ -289,6 +325,7 @@ def process_inbound(phone, text):
             if current_lead_id:
                 rp("HSET", f"prosper.lead.active.{current_lead_id}", "status", "released", "closed_at", str(int(time.time())))
             rp("HSET", rep_key, "current_lead_id", "")
+            current_lead_id = ""
             actions.append("MISS (no penalty)")
             released_or_set = True
             want_next = True  # auto-serve next after MISS

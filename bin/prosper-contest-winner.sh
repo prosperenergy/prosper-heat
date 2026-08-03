@@ -26,6 +26,7 @@ declare -A BOARD
 for K in $REP_KEYS; do
   PHONE="${K#prosper.lead.rep.}"
   NAME=$($RP HGET "$K" name)
+  [ -z "$NAME" ] && continue
   PTS=$($RP HGET "$K" points_today)
   CALLS=$($RP HGET "$K" calls_today)
   TEXTS=$($RP HGET "$K" texts_today)

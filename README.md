@@ -1,6 +1,6 @@
 # 🔥 Prosper Heat
 
-**A live, gamified lead-distribution engine for sales teams — built on iMessage, Redis, and LLM-classified rep responses.**
+**A live, gamified lead-distribution engine for sales teams — built on iMessage, Valkey (Redis-compatible), and LLM-classified rep responses.**
 
 > Built by Craig Stratton + Hanna (Claude Sonnet 4.6) in a single afternoon to solve a real problem: getting hand-picked closers to actually work fresh inbound leads with speed, accountability, and a real prize on the line.
 
@@ -45,7 +45,7 @@ The set multiplier is the engagement lever. SET on your 1st lead = +5. SET on yo
          | rep reply                                      |
          | (CALLED/TEXTED/                                v
          |  SET/MISS/NEXT)                       +----------------+
-         |                                       | Redis state    |
+         |                                       | Valkey state    |
          +-------------------------------------> | per-rep pts +  |
                                                  | per-lead status|
                                                  +----------------+
@@ -55,7 +55,7 @@ The set multiplier is the engagement lever. SET on your 1st lead = +5. SET on yo
 
 | Daemon | Cadence | Purpose |
 |---|---|---|
-| `io.prosper.heat-engine` | every 30s | Read new inbounds, classify, update Redis, auto-serve next lead |
+| `io.prosper.heat-engine` | every 30s | Read new inbounds, classify, update Valkey, auto-serve next lead |
 | `io.prosper.lead-timer` | every 60s | Fire T+5 reminder + T+15 reassign on active leads (tunable) |
 | `io.prosper.heat-hourly` | :00 + :30 | Write digest snapshot to `~/ClaudeCodexBridge/prosper-heat-digest-latest.txt` |
 | `io.prosper.contest-winner` | 9:00 PM | Compute leaderboard, write winner announcement |
@@ -80,7 +80,7 @@ The set multiplier is the engagement lever. SET on your 1st lead = +5. SET on yo
 3. Dedupes by phone number (most recent dupe wins per rep)
 4. Writes a single pool file the engine pops from
 
-### Redis schema
+### Valkey schema
 
 ```
 prosper.lead.rep.<phone>          (HASH per rep)
@@ -123,7 +123,7 @@ prosper.lead.active.<lead_id>     (HASH per active lead)
 - macOS (this codebase uses iMessage as the rail)
 - bun 1.3+ at `~/.local/bin/bun` (FDA granted)
 - python 3.9+
-- redis-server running locally (we use a small wrapper `redis-prosper` that loads env from `~/.config/prosper/prosper.env`)
+- valkey-server (or redis-server) running locally. The engine prefers `valkey-cli`, then `redis-cli`, then the `redis-prosper` wrapper that loads env from `~/.config/prosper/prosper.env`
 - A local OpenAI-compatible LLM gateway at `http://127.0.0.1:8317/v1/chat/completions` (we use CPAMC — claude-proxy-anthropic-multi-claude — with per-agent Bearer tokens; any OpenAI-compatible gateway works)
 - A Solar Exclusive Leads (or equivalent) iMessage feed sender for the lead pool source
 
@@ -143,7 +143,7 @@ done
 # Generate the lead pool
 python3 helpers/prosper-heat-extract-leads.py
 
-# Init Redis state for your reps (edit reps list in heat-engine.py first)
+# Init Valkey state for your reps (edit reps list in heat-engine.py first)
 # See bin/prosper-heat-engine.py REP_NAMES dict
 ```
 
@@ -163,7 +163,7 @@ Each opt-in includes the YES/NO/PAUSE/GO/CONTACTED/MISS protocol so reps know th
 
 ✅ **Lead distribution end-to-end:** Pool of 83 unique homeowners → auto-assigned to whichever active rep is at the top of the leaderboard (80/20 lean — hungry reps eat first).
 
-✅ **Point tally:** CALL +2, TEXT +1, SET +5×leads_worked. Live in Redis, ack message in <3 seconds per rep reply.
+✅ **Point tally:** CALL +2, TEXT +1, SET +5×leads_worked. Live in Valkey, ack message in <3 seconds per rep reply.
 
 ✅ **LLM fallback classification:** When a rep says natural language ("I called and texted Joyce, no answer"), Haiku 4.5 parses it into the action list.
 
@@ -183,7 +183,7 @@ Each opt-in includes the YES/NO/PAUSE/GO/CONTACTED/MISS protocol so reps know th
 
 🚧 **No keyword router in the responder daemon:** The iMessage responder (Sonnet-pinned natural language assistant) still answers contest-verb replies sometimes — those should be deferred to heat-engine. Add the regex to blocklist.ts SPAMMY_BODY_PATTERNS.
 
-🚧 **No mobile push for Craig:** Operator currently relies on Cowork chat for digest visibility. Future: simple HTML dashboard at `localhost:8080` that polls Redis.
+🚧 **No mobile push for Craig:** Operator currently relies on Cowork chat for digest visibility. Future: simple HTML dashboard at `localhost:8080` that polls Valkey.
 
 🚧 **Lead-quality scoring:** Right now every lead is treated equal. Future: assign higher base points for $400+/mo bills, no-shade roofs, etc.
 
@@ -197,13 +197,13 @@ Each opt-in includes the YES/NO/PAUSE/GO/CONTACTED/MISS protocol so reps know th
 
 ## Contribute
 
-This is intentionally simple — bash + python + bun + Redis. **No frameworks. No services. No SaaS lock-in.**
+This is intentionally simple — bash + python + bun + Valkey. **No frameworks. No services. No SaaS lock-in.**
 
 If you run sales teams and want to fork this, do it. PRs welcome. The faster this gets to 100 reps tested across 10 verticals, the better the playbook.
 
 Things that would help:
 - Twilio / Telnyx / SignalWire rails for non-iMessage shops
-- A clean web dashboard (read-only Redis viewer, leaderboard at `/`)
+- A clean web dashboard (read-only Valkey viewer, leaderboard at `/`)
 - More opt-in / lead-packet templates for different rep archetypes
 - Better natural-language classification prompts (the haiku prompt in `prosper-heat-engine.py` is v1)
 - Multi-day / multi-week contest variants

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prosper Heat — engine wrapper (bash)
 # Calls bun helper to read chat.db (FDA-safe), pipes inbounds to the python core
-# which handles strict + LLM-fallback classification, Redis updates, ack sends,
+# which handles strict + LLM-fallback classification, Valkey updates, ack sends,
 # and auto-distribute. Runs every 30s via launchd (io.prosper.heat-engine).
 # Authored by Hanna 2026-05-30. Open-source at github.com/prosperenergy/prosper-heat.
 

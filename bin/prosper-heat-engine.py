@@ -4,9 +4,24 @@
 updates Redis, sends acks via osascript Messages, auto-distributes next leads.
 Authored by Hanna 2026-05-30."""
 
-import json, sys, subprocess, re, os, time, urllib.request
+import json, sys, subprocess, re, os, time, urllib.request, shutil
 
-RP = "/Users/craigstratton/bin/redis-prosper"
+def _find_valkey_cli() -> str:
+    """Prefer valkey-cli, then redis-cli, then the local redis-prosper wrapper."""
+    for candidate in (
+        os.environ.get("VALKEY_CLI"),
+        os.environ.get("REDIS_CLI"),
+        shutil.which("valkey-cli"),
+        shutil.which("redis-cli"),
+        os.path.expanduser("/Users/craigstratton/bin/redis-prosper"),
+        os.path.expanduser("~/bin/redis-prosper"),
+    ):
+        if candidate and os.path.exists(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return "valkey-cli"
+
+
+RP = _find_valkey_cli()
 POOL_JSON = "/Users/craigstratton/ClaudeCodexBridge/prosper-heat-lead-pool.json"
 LOG = "/tmp/prosper-heat-engine.log"
 GATEWAY = "http://127.0.0.1:8317/v1/chat/completions"
